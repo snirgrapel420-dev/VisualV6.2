@@ -61,10 +61,21 @@ void SourceCombo::timerCallback()
 // =============================================================================
 HeaderBar::HeaderBar(DaliVisualProcessor& p) : proc(p), scene(p, params::id::scene), source(p), display(p)
 {
-    for (juce::Component* c : std::initializer_list<juce::Component*> { &scene, &source, &display, &identify, &live, &panelBtn, &settings })
+    for (juce::Component* c : std::initializer_list<juce::Component*> { &scene, &source, &display, &identify, &live, &panelBtn, &settings,
+                                                                        &undoBtn, &redoBtn, &chaos })
         addAndMakeVisible(c);
 
     identify.onClick = [this] { proc.output.identifyDisplays(); };
+    undoBtn.onClick = [this] { proc.undo(); };
+    redoBtn.onClick = [this] { proc.redo(); };
+    undoBtn.setTooltip("Undo (Ctrl+Z): resets, scene inits, cleared routes...");
+    redoBtn.setTooltip("Redo (Ctrl+Y)");
+    chaos.setClickingTogglesState(true);
+    chaos.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffd81b60));
+    chaos.setTooltip("CHAOS: everything to the most psychedelic level - full trip, deepest symmetry and trails, "
+                     "the music read as its wildest. MIDI-learnable (right-click is not needed: map it in the host)");
+    if (auto* prm = proc.apvts.getParameter(dali::params::id::chaosMode))
+        chaosAttachment = std::make_unique<juce::ButtonParameterAttachment>(*prm, chaos);
     live.onClick = [this] { proc.output.toggle(); updateLiveButton(); };
     panelBtn.setClickingTogglesState(true);
     panelBtn.setToggleState(true, juce::dontSendNotification);
@@ -77,17 +88,21 @@ HeaderBar::HeaderBar(DaliVisualProcessor& p) : proc(p), scene(p, params::id::sce
     scene.setTooltip("Scene (keys 1-8)");
 
     proc.output.addChangeListener(this);
+    proc.historyChanged.addChangeListener(this);
     updateLiveButton();
     startTimerHz(4);
 }
 
 HeaderBar::~HeaderBar()
 {
+    proc.historyChanged.removeChangeListener(this);
     proc.output.removeChangeListener(this);
 }
 
 void HeaderBar::updateLiveButton()
 {
+    undoBtn.setEnabled(proc.canUndo());
+    redoBtn.setEnabled(proc.canRedo());
     const bool on = proc.output.isOpen();
     live.setToggleState(on, juce::dontSendNotification);
     live.setButtonText(on ? "LIVE  - STOP" : "GO LIVE");
@@ -143,9 +158,13 @@ void HeaderBar::resized()
     x -= 18 + sourceW; place(source, x, sourceW, "AUDIO SOURCE");
     const int rightStart = x - 18;
 
-    // left side (flexible): the scene chooser
+    // left side (flexible): the scene chooser, then CHAOS and undo / redo
     const int lx = r.getX();
-    place(scene, lx, juce::jlimit(200, 360, rightStart - lx - 8), "SCENE");
+    const int sceneW = juce::jlimit(180, 300, rightStart - lx - 8 - 92 - 64);
+    place(scene, lx, sceneW, "SCENE");
+    place(chaos, lx + sceneW + 8, 84);
+    place(undoBtn, lx + sceneW + 8 + 90, 30);
+    place(redoBtn, lx + sceneW + 8 + 90 + 32, 30);
 }
 
 // =============================================================================
